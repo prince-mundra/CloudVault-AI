@@ -1,0 +1,377 @@
+openapi: 3.0.3
+info:
+  title: CloudVault AI API
+  version: 0.3.0
+  description: >-
+    PostgreSQL-backed document API with local FastAPI/Ollama ingestion and pgvector retrieval.
+    Normal file responses omit storage object keys and provider URLs. Upload size defaults
+    to 50 MiB and is configurable; per-owner quota reservations are enforced.
+servers:
+  - url: http://localhost:8080
+security:
+  - bearerToken: []
+    tokenSalt: []
+paths:
+  /healthz:
+    get:
+      security: []
+      summary: Database health without exposing internal errors
+      responses:
+        '200': { description: Healthy, content: { application/json: { schema: { $ref: '#/components/schemas/Health' } } } }
+        '503': { description: Unhealthy; generic body }
+  /v1/auth/oauth/register:
+    post:
+      security: []
+      summary: Register a user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, email, password]
+              properties:
+                username: { type: string }
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8 }
+      responses:
+        '201': { description: Created; returns user, token, and salt }
+        '409': { description: Account conflict }
+        '422': { description: Invalid request }
+  /v1/auth/oauth/login:
+    post:
+      security: []
+      summary: Log in with email and password
+      responses:
+        '200': { description: Returns user, token, and salt }
+        '401': { description: Invalid credentials }
+  /v1/auth/anonymous/register:
+    post:
+      security: []
+      summary: Create anonymous session
+      responses:
+        '201': { description: Returns anonymous_id, token, and salt }
+  /v1/auth/validate:
+    post:
+      security: []
+      summary: Validate bearer credentials (token is not accepted in URL parameters)
+      responses:
+        '200': { description: Valid token and subject }
+        '401': { description: Invalid or expired token }
+        '503': { description: Session/revocation store unavailable }
+  /v1/auth/logout:
+    post:
+      summary: Revoke the presented token
+      responses:
+        '200': { description: Token revoked }
+        '401': { description: Invalid or revoked token }
+        '503': { description: Revocation storage unavailable }
+  /v1/analytics/storage:
+    get:
+      summary: Get owner-scoped storage totals, enforced quota, reservations, and activity
+      responses:
+        '200': { description: Analytics for authenticated caller }
+        '503': { description: Analytics storage unavailable }
+  /v1/admin/users:
+    get:
+      summary: List users (admin role required)
+      responses:
+        '200': { description: Public user profiles; no password hashes }
+        '403': { description: Administrator role required }
+        '503': { description: Role store unavailable }
+  /v1/users/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      summary: Get own profile only
+      responses:
+        '200': { description: User profile }
+        '403': { description: Self-access only }
+    put:
+      summary: Update own profile; current_password required for every update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password]
+              properties:
+                username: { type: string }
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8 }
+                current_password: { type: string }
+      responses:
+        '200': { description: Updated profile; credential changes invalidate prior sessions }
+        '401': { description: Current password incorrect }
+        '403': { description: Self-access only }
+    delete:
+      summary: Delete own account only after owned files and pending uploads are removed
+      responses:
+        '200': { description: Account deleted and sessions invalidated }
+        '403': { description: Self-access only }
+        '409': { description: Storage cleanup must complete first }
+  /v1/files:
+    get:
+      summary: Search and page through files owned by the caller
+      parameters:
+        - { name: search, in: query, schema: { type: string } }
+        - { name: content_type, in: query, description: MIME type prefix, schema: { type: string } }
+        - { name: folder_id, in: query, description: Owned folder ID or root, schema: { type: string } }
+        - { name: sort, in: query, schema: { type: string, enum: [name, size, created_at, updated_at], default: updated_at } }
+        - { name: order, in: query, schema: { type: string, enum: [asc, desc], default: desc } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+      responses:
+        '200': { description: Safe file metadata and pagination envelope }
+    post:
+      summary: Upload a file (default maximum 50 MiB; configurable to 1 GiB)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '201': { description: File uploaded; internal object key and provider URL omitted }
+        '200': { description: Existing identical owner-scoped file returned; no duplicate object created }
+        '409': { description: Identical upload is already in progress }
+        '413': { description: Upload size or storage quota exceeded }
+  /v1/files/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      summary: Read metadata as owner or granted reader
+      responses:
+        '200': { description: Safe file metadata; path and URL are never included }
+        '403': { description: Read access denied }
+    put:
+      summary: Update metadata as owner or granted writer
+      responses:
+        '200': { description: Updated safe metadata }
+        '403': { description: Write access denied }
+        '422': { description: Immutable fields rejected }
+    delete:
+      summary: Queue permanent deletion; owner only, regardless of can_delete share flag
+      responses:
+        '202': { description: Durable deletion queued for retryable storage cleanup }
+        '403': { description: Only the owner may permanently delete the original }
+  /v1/files/{id}/download:
+    get:
+      summary: Stream file through application authorization; no provider URL returned
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: File bytes with attachment disposition }
+        '403': { description: Read access denied }
+  /v1/files/{id}/ingestion:
+    get:
+      summary: Get asynchronous ingestion status (file owner only)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: State, attempt count, sanitized error code, and update time }
+        '404': { description: File or ingestion status not found }
+        '503': { description: Ingestion status unavailable }
+  /v1/files/{id}/summary:
+    get:
+      summary: Get independent summary job status and summary text as owner or granted reader
+      description: Poll this endpoint until state is succeeded; summary generation retries are independent of ingestion status.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Summary state and, when available, locally generated summary text, content: { application/json: { schema: { $ref: '#/components/schemas/DocumentSummaryStatus' } } } }
+        '404': { description: File is unavailable or caller has no read access }
+        '503': { description: Summary status unavailable }
+  /v1/search/semantic:
+    post:
+      summary: Find semantically relevant chunks in owned or shared-readable files
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query]
+              properties:
+                query: { type: string, minLength: 2, maxLength: 1000 }
+                limit: { type: integer, minimum: 1, maximum: 20, default: 10 }
+                content_type: { type: string, maxLength: 128, description: Optional MIME type prefix such as image/ or application/pdf }
+      responses:
+        '200': { description: Relevant text chunks with file metadata and similarity scores; no generated answer }
+        '401': { description: Authentication required }
+        '422': { description: Query or limit validation failed }
+        '413': { description: Request body exceeds the bounded search payload size }
+        '503': { description: Local AI service unavailable or not configured }
+  /v1/files/{id}/folder:
+    patch:
+      summary: Move an owned file to an owned folder or root
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                folder_id: { type: string, nullable: true }
+      responses:
+        '200': { description: File moved }
+        '403': { description: Owner required }
+        '404': { description: File or folder not found }
+  /v1/files/{id}/shares:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      summary: List grants (owner only)
+      responses:
+        '200': { description: Permission list }
+        '403': { description: Owner required }
+    post:
+      summary: Create or replace registered-recipient permissions (owner only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id]
+              properties:
+                user_id: { type: string }
+                can_read: { type: boolean }
+                can_write: { type: boolean }
+                can_delete: { type: boolean, description: Does not permit permanent deletion of original }
+      responses:
+        '200': { description: Permission saved and actor-attributed audit event committed }
+        '403': { description: Owner required }
+        '404': { description: Recipient not found }
+  /v1/files/{id}/shares/{user_id}:
+    delete:
+      summary: Revoke recipient grant (owner only)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: user_id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Grant revoked and audited }
+        '403': { description: Owner required }
+  /v1/shares/with-me:
+    get:
+      summary: List files shared with the authenticated user that grant read access
+      responses:
+        '200': { description: Shared file metadata array }
+  /v1/shares/with-me/{id}:
+    delete:
+      summary: Remove only the caller's own shared reference; original remains intact
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Shared reference revoked }
+        '403': { description: Caller does not own this grant }
+  /v1/files/{id}/share-links:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      summary: List owner-managed link metadata; token is not returned
+      responses:
+        '200': { description: Link metadata }
+        '403': { description: Owner required }
+    post:
+      summary: Create an expiring public bearer link (token is returned once)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                password: { type: string, minLength: 8, maxLength: 72 }
+                expires_in_seconds: { type: integer, minimum: 0, maximum: 2592000, default: 604800 }
+      responses:
+        '201': { description: Link metadata, raw token, and application download path }
+        '403': { description: Owner required }
+  /v1/files/{id}/share-links/{link_id}:
+    delete:
+      summary: Revoke an owner-managed public link
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: link_id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Link revoked }
+        '403': { description: Owner required }
+  /v1/public/share-links/{token}/download:
+    get:
+      security: []
+      summary: Download via a rate-limited expiring share token
+      parameters:
+        - { name: token, in: path, required: true, schema: { type: string } }
+        - { name: X-Share-Password, in: header, required: false, schema: { type: string } }
+      responses:
+        '200': { description: File bytes streamed from private storage through the application }
+        '401': { description: Share password required or invalid }
+        '404': { description: Link expired, revoked, or unavailable }
+        '429': { description: Rate limit exceeded }
+  /v1/folders:
+    get:
+      summary: List folders at root or under parent_id
+      parameters:
+        - { name: parent_id, in: query, schema: { type: string } }
+      responses:
+        '200': { description: Owned folder array }
+    post:
+      summary: Create an owner-scoped folder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 255 }
+                parent_id: { type: string, nullable: true }
+      responses:
+        '201': { description: Folder created }
+        '404': { description: Parent not owned or not found }
+  /v1/folders/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    patch:
+      summary: Rename or move an owned folder; null parent_id moves it to root
+      responses:
+        '200': { description: Folder updated }
+        '409': { description: Duplicate name or folder is not empty }
+        '422': { description: Move would create a cycle }
+    delete:
+      summary: Delete an empty owned folder
+      responses:
+        '200': { description: Folder deleted }
+        '409': { description: Folder contains files or child folders }
+components:
+  schemas:
+    Health:
+      type: object
+      properties:
+        status: { type: string, enum: [ok] }
+    DocumentSummaryStatus:
+      type: object
+      required: [state, attempts, updated_at]
+      properties:
+        state: { type: string, enum: [queued, processing, succeeded, failed, cancelled] }
+        attempts: { type: integer, minimum: 0 }
+        last_error: { type: string, description: Sanitized error code; never raw model or database errors }
+        updated_at: { type: string, format: date-time }
+        summary: { type: string, description: Present after successful local summarization }
+        model: { type: string, description: Local Ollama generation model identifier }
+  securitySchemes:
+    bearerToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    tokenSalt:
+      type: apiKey
+      in: header
+      name: X-Salt

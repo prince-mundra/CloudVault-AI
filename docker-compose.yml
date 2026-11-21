@@ -1,0 +1,147 @@
+# Local-first stack. AI mode: AI_SERVICE_URL=http://ai-api:8000 docker compose --profile ai up --build
+version: '3.8'
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       ${DB_DATABASE}
+      POSTGRES_USER:     ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d ${DB_DATABASE}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      APP_ENV:          production
+      SERVER_PORT:      "8080"
+      DB_DRIVER:        postgres
+      DB_HOST:          postgres
+      DB_PORT:          "5432"
+      DB_DATABASE:      ${DB_DATABASE}
+      DB_USERNAME:      ${DB_USERNAME}
+      DB_PASSWORD:      ${DB_PASSWORD}
+      DB_SSL_MODE:      disable
+      JWT_SECRET_KEY:   ${JWT_SECRET_KEY}
+      STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
+      LOCAL_STORAGE_ROOT: /app/data/files
+      STORAGE_QUOTA_BYTES: ${STORAGE_QUOTA_BYTES:-5368709120}
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-52428800}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      AWS_REGION:            ${AWS_REGION:-us-east-1}
+      AWS_BUCKET_NAME:       ${AWS_BUCKET_NAME:-}
+      AWS_ACCESS_KEY_ID:     ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      GOOGLE_CLOUD_PROJECT_ID:      ${GOOGLE_CLOUD_PROJECT_ID:-}
+      GOOGLE_CLOUD_BUCKET_NAME:     ${GOOGLE_CLOUD_BUCKET_NAME:-}
+      GOOGLE_CLOUD_CREDENTIALS_FILE: ${GOOGLE_CLOUD_CREDENTIALS_FILE:-}
+      AI_SERVICE_URL: ${AI_SERVICE_URL:-}
+      AI_SHARED_SECRET: ${AI_SHARED_SECRET:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - local_files:/app/data
+
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["ai"]
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+
+  ollama-model-init:
+    image: ollama/ollama:latest
+    profiles: ["ai"]
+    restart: "no"
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-nomic-embed-text}
+      OLLAMA_SUMMARY_MODEL: ${OLLAMA_SUMMARY_MODEL:-llama3.2:3b}
+    entrypoint: ["/bin/sh", "-c"]
+    command: >-
+      until ollama list >/dev/null 2>&1; do sleep 2; done;
+      ollama pull "$${OLLAMA_EMBED_MODEL}" && ollama pull "$${OLLAMA_SUMMARY_MODEL}"
+    depends_on:
+      ollama:
+        condition: service_started
+    volumes:
+      - ollama_data:/root/.ollama
+
+  ai-api:
+    build:
+      context: .
+      dockerfile: ai_service/Dockerfile
+    profiles: ["ai"]
+    restart: unless-stopped
+    environment: &ai_environment
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_DATABASE: ${DB_DATABASE}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_SSL_MODE: disable
+      AI_SHARED_SECRET: ${AI_SHARED_SECRET:-}
+      AI_STORAGE_ROOT: /app/data/files
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-nomic-embed-text}
+      OLLAMA_SUMMARY_MODEL: ${OLLAMA_SUMMARY_MODEL:-llama3.2:3b}
+      AI_EMBEDDING_DIMENSION: "768"
+      AI_POLL_SECONDS: ${AI_POLL_SECONDS:-2}
+      AI_MAX_ATTEMPTS: ${AI_MAX_ATTEMPTS:-5}
+      AI_MAX_DOCUMENT_BYTES: ${AI_MAX_DOCUMENT_BYTES:-52428800}
+      AI_MAX_PDF_PAGES: ${AI_MAX_PDF_PAGES:-250}
+      AI_MAX_OCR_PAGES: ${AI_MAX_OCR_PAGES:-40}
+      AI_MAX_EXTRACTED_CHARS: ${AI_MAX_EXTRACTED_CHARS:-2500000}
+      AI_CHUNK_SIZE: ${AI_CHUNK_SIZE:-1200}
+      AI_CHUNK_OVERLAP: ${AI_CHUNK_OVERLAP:-150}
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama-model-init:
+        condition: service_completed_successfully
+    volumes:
+      - local_files:/app/data:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  ai-worker:
+    build:
+      context: .
+      dockerfile: ai_service/Dockerfile
+    profiles: ["ai"]
+    restart: unless-stopped
+    command: ["python", "-m", "ai_service.worker"]
+    environment: *ai_environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama-model-init:
+        condition: service_completed_successfully
+    volumes:
+      - local_files:/app/data:ro
+
+volumes:
+  postgres_data:
+  local_files:
+  ollama_data:
