@@ -16,6 +16,7 @@ type fakeVersionChecker struct {
 }
 
 func (f fakeVersionChecker) GetAuthVersion(string) (int64, error) { return f.version, f.err }
+func (f fakeVersionChecker) GetAuthInfo(string) (int64, bool, error) { return f.version, false, f.err }
 
 func TestCORSMiddlewareAllowsOnlyConfiguredOrigins(t *testing.T) {
 	gin.SetMode(gin.TestMode)

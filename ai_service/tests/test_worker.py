@@ -36,6 +36,10 @@ class FakeConnection:
     async def transaction(self):
         yield
 
+    @asynccontextmanager
+    async def cursor(self):
+        yield self
+
     async def execute(self, query: str, params: tuple[Any, ...] = ()) -> FakeCursor:
         self.statements.append((query, params))
         normalized = " ".join(query.split()).lower()

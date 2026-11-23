@@ -93,13 +93,17 @@ func (r *UploadRepository) Finalize(ctx context.Context, reservationID string, f
 	if ownerID != f.OwnerID {
 		return errors.New("reservation owner mismatch")
 	}
+	actor := actorID
+	if actor == "" {
+		actor = f.OwnerID
+	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO files (id,name,path,url,size,content_type,owner_id,folder_id,created_at,updated_at,sha256,state) VALUES ($1,$2,$3,'',$4,$5,$6,$7,$8,$9,$10,'active')`, f.ID, f.Name, f.Path, f.Size, f.ContentType, f.OwnerID, f.FolderID, f.CreatedAt, f.UpdatedAt, f.SHA256); err != nil {
 		return fmt.Errorf("persisting file metadata: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO file_activity (owner_id,file_id,file_name,action,size_bytes,actor_id) VALUES ($1,$2,$3,'upload',$4,$5)`, f.OwnerID, f.ID, f.Name, f.Size, actorID); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO file_activity (owner_id,file_id,file_name,action,size_bytes,actor_id) VALUES ($1,$2,$3,'upload',$4,$5)`, f.OwnerID, f.ID, f.Name, f.Size, actor); err != nil {
 		return fmt.Errorf("recording upload activity: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO audit_events (actor_id,actor_subject,owner_id,resource_type,resource_id,action,outcome,details) VALUES ($1,$1,$2,'file',$3,'upload','success',jsonb_build_object('size_bytes',$4,'sha256',$5,'content_type',$6))`, actorID, f.OwnerID, f.ID, f.Size, f.SHA256, f.ContentType); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO audit_events (actor_id,actor_subject,owner_id,resource_type,resource_id,action,outcome,details) VALUES ($1,$1,$2,'file',$3,'upload','success',jsonb_build_object('size_bytes',$4::bigint,'sha256',$5::text,'content_type',$6::text))`, actor, f.OwnerID, f.ID, f.Size, f.SHA256, f.ContentType); err != nil {
 		return fmt.Errorf("recording upload audit: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO document_ingestion_jobs (file_id,state) VALUES ($1,'queued')`, f.ID); err != nil {

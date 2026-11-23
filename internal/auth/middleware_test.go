@@ -21,6 +21,20 @@ func (f *fakeRevocationChecker) IsRevoked(hash string) (bool, error) {
 	return f.revoked, f.err
 }
 
+func (f *fakeRevocationChecker) GetAuthInfo(string) (int64, bool, error) {
+	if f.err != nil {
+		return 0, false, f.err
+	}
+	return 1, false, nil
+}
+
+func (f *fakeRevocationChecker) GetAuthVersion(string) (int64, error) {
+	if f.err != nil {
+		return 0, f.err
+	}
+	return 1, nil
+}
+
 func TestJWTAuthMiddlewareChecksRevocation(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	secret := "a-32-character-test-secret-value!!"
@@ -40,7 +54,7 @@ func TestJWTAuthMiddlewareChecksRevocation(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			router := gin.New()
-			router.Use(JWTAuthMiddleware(secret, tc.checker))
+			router.Use(JWTAuthMiddleware(secret, tc.checker, tc.checker))
 			router.GET("/protected", func(ctx *gin.Context) { ctx.Status(http.StatusNoContent) })
 			req := httptest.NewRequest(http.MethodGet, "/protected", nil)
 			req.Header.Set("Authorization", "Bearer "+token)

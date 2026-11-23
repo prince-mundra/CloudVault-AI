@@ -16,6 +16,7 @@ type User struct {
 	Username     string    `json:"username"`
 	Email        string    `json:"email"`
 	Role         string    `json:"role"`
+	IsAnonymous  bool      `json:"is_anonymous"`
 	AuthVersion  int64     `json:"-"`
 	PasswordHash string    `json:"-"` // Never exposed in JSON responses
 	CreatedAt    time.Time `json:"created_at"`
@@ -39,8 +40,28 @@ func NewUser(id, username, email, plainPassword string) (*User, error) {
 		Username:     username,
 		Email:        email,
 		Role:         "user",
+		IsAnonymous:  false,
 		AuthVersion:  1,
 		PasswordHash: string(hash),
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}, nil
+}
+
+// NewAnonymousUser creates an anonymous guest user with an unmatchable password hash.
+func NewAnonymousUser(id string) (*User, error) {
+	if id == "" {
+		return nil, errors.New("id is required")
+	}
+	now := time.Now()
+	return &User{
+		ID:           id,
+		Username:     "anon_" + id,
+		Email:        "anon_" + id + "@anonymous.cloudvault.internal",
+		Role:         "anonymous",
+		IsAnonymous:  true,
+		AuthVersion:  1,
+		PasswordHash: "!ANONYMOUS_LOCKED!",
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}, nil

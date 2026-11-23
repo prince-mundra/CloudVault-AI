@@ -47,8 +47,15 @@ type searchRequest struct {
 	ContentType string `json:"content_type,omitempty"`
 }
 
+func NewWithClient(baseURL, secret string, httpClient *http.Client) *Client {
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 70 * time.Second}
+	}
+	return &Client{baseURL: strings.TrimRight(baseURL, "/"), secret: secret, http: httpClient}
+}
+
 func New(baseURL, secret string) *Client {
-	return &Client{baseURL: strings.TrimRight(baseURL, "/"), secret: secret, http: &http.Client{Timeout: 70 * time.Second}}
+	return NewWithClient(baseURL, secret, nil)
 }
 
 func (c *Client) Search(ctx context.Context, userID, query string, limit int, contentType string) (*SearchResponse, error) {

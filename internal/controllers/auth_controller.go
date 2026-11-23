@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
@@ -33,7 +34,7 @@ func (c *AuthController) RegisterOAuthUser(ctx *gin.Context) {
 	}
 	user, pair, err := c.authSvc.RegisterOAuth(req.Username, req.Email, req.Password)
 	if err != nil {
-		if strings.Contains(err.Error(), "already exists") {
+		if errors.Is(err, services.ErrEmailAlreadyExists) || errors.Is(err, services.ErrUsernameAlreadyExists) || strings.Contains(err.Error(), "already exists") {
 			merrors.Conflict(ctx, err.Error())
 		} else {
 			merrors.InternalServer(ctx, "registration failed")

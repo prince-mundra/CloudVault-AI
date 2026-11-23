@@ -4,8 +4,8 @@ package auth
 
 import "github.com/google/uuid"
 
-// GenerateAnonymousID returns a new random UUID string to identify
-// an anonymous (unauthenticated) session.
+// GenerateAnonymousID returns a standard random UUID string (36 characters) to identify
+// an anonymous guest account in VARCHAR(36) database columns.
 func GenerateAnonymousID() string {
-	return "anon_" + uuid.New().String()
+	return uuid.New().String()
 }

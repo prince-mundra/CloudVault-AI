@@ -18,6 +18,7 @@ import (
 type Claims struct {
 	Subject        string `json:"sub"`
 	SessionVersion int64  `json:"sv,omitempty"`
+	IsAnonymous    bool   `json:"is_anonymous,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -46,6 +47,10 @@ func GenerateToken(baseSecret, subject string, expiry time.Duration) (tokenStrin
 }
 
 func GenerateTokenWithVersion(baseSecret, subject string, version int64, expiry time.Duration) (tokenString, salt string, err error) {
+	return GenerateTokenWithVersionAndAnonymous(baseSecret, subject, version, false, expiry)
+}
+
+func GenerateTokenWithVersionAndAnonymous(baseSecret, subject string, version int64, isAnonymous bool, expiry time.Duration) (tokenString, salt string, err error) {
 	salt, err = GenerateDynamicSalt()
 	if err != nil {
 		return "", "", err
@@ -55,6 +60,7 @@ func GenerateTokenWithVersion(baseSecret, subject string, version int64, expiry 
 	claims := Claims{
 		Subject:        subject,
 		SessionVersion: version,
+		IsAnonymous:    isAnonymous,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   subject,
 			IssuedAt:  jwt.NewNumericDate(now),

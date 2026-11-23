@@ -24,7 +24,7 @@ func NewLocalStorage(root string) (*LocalStorage, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolving local storage root: %w", err)
 	}
-	if err := os.MkdirAll(abs, 0o750); err != nil {
+	if err := os.MkdirAll(abs, 0o755); err != nil {
 		return nil, fmt.Errorf("creating local storage root: %w", err)
 	}
 	rootPath, err := filepath.EvalSymlinks(abs)
@@ -71,7 +71,7 @@ func (s *LocalStorage) UploadFile(ctx context.Context, file *multipart.FileHeade
 	if err != nil {
 		return "", err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return "", fmt.Errorf("creating object directory: %w", err)
 	}
 	src, err := file.Open()
@@ -79,7 +79,7 @@ func (s *LocalStorage) UploadFile(ctx context.Context, file *multipart.FileHeade
 		return "", fmt.Errorf("opening uploaded file: %w", err)
 	}
 	defer src.Close()
-	dst, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o640)
+	dst, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
 	if err != nil {
 		return "", fmt.Errorf("creating local object: %w", err)
 	}

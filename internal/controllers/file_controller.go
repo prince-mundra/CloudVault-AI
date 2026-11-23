@@ -3,6 +3,7 @@ package controllers
 
 import (
 	"errors"
+	"log"
 	"mime"
 	"net/http"
 	"path"
@@ -74,6 +75,7 @@ func (c *FileController) CreateFile(ctx *gin.Context) {
 		case strings.Contains(err.Error(), "configured upload limit"), strings.Contains(err.Error(), "size does not match"), strings.Contains(err.Error(), "file is required"):
 			merrors.BadRequest(ctx, err.Error())
 		default:
+			log.Printf("file upload failed: %v", err)
 			merrors.InternalServer(ctx, "file upload failed")
 		}
 		return
@@ -205,6 +207,7 @@ func (c *FileController) UpdateFile(ctx *gin.Context) {
 }
 func (c *FileController) DeleteFile(ctx *gin.Context) {
 	if err := c.fileSvc.DeleteFile(ctx.Request.Context(), ctx.Param("id"), requesterID(ctx)); err != nil {
+		log.Printf("file delete error: %v", err)
 		switch err.Error() {
 		case "permission denied":
 			merrors.Forbidden(ctx, "only the file owner may permanently delete it")

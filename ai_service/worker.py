@@ -131,15 +131,16 @@ class IngestionWorker:
                     )
                     return
                 await conn.execute("DELETE FROM document_chunks WHERE file_id = %s", (file_id,))
-                await conn.executemany(
-                    """INSERT INTO document_chunks
-                       (file_id, chunk_index, page_number, chunk_text, embedding, embedding_model)
-                       VALUES (%s, %s, %s, %s, %s::vector, %s)""",
-                    [
-                        (file_id, chunk_index, page_number, text, self._vector_literal(vector), self.settings.ollama_model)
-                        for (chunk_index, page_number, text), vector in zip(chunks, vectors, strict=True)
-                    ],
-                )
+                async with conn.cursor() as cur:
+                    await cur.executemany(
+                        """INSERT INTO document_chunks
+                           (file_id, chunk_index, page_number, chunk_text, embedding, embedding_model)
+                           VALUES (%s, %s, %s, %s, %s::vector, %s)""",
+                        [
+                            (file_id, chunk_index, page_number, text, self._vector_literal(vector), self.settings.ollama_model)
+                            for (chunk_index, page_number, text), vector in zip(chunks, vectors, strict=True)
+                        ],
+                    )
                 await conn.execute(
                     """UPDATE document_ingestion_jobs
                        SET state='succeeded', locked_at=NULL, completed_at=NOW(), updated_at=NOW(), last_error=''
