@@ -18,9 +18,15 @@ func TestSignatureMatchesPythonWireVector(t *testing.T) {
 	}
 }
 
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
+}
+
 func TestSearchSignsRequestAndDecodesResponse(t *testing.T) {
 	secret := "test-secret-with-at-least-32-bytes"
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != searchPath || r.Method != http.MethodPost {
 			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -41,9 +47,17 @@ func TestSearchSignsRequestAndDecodesResponse(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"results":[{"file_id":"f1","file_name":"notes.txt","chunk_index":0,"page_number":null,"text":"hello world","score":0.9}]}`))
-	}))
-	defer server.Close()
-	result, err := New(server.URL, secret).Search(context.Background(), "user-1", "hello", 5, "application/pdf")
+	})
+
+	httpClient := &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, r)
+			return rec.Result(), nil
+		}),
+	}
+
+	result, err := NewWithClient("http://ai-service.local", secret, httpClient).Search(context.Background(), "user-1", "hello", 5, "application/pdf")
 	if err != nil {
 		t.Fatal(err)
 	}

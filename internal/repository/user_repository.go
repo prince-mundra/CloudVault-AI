@@ -16,20 +16,20 @@ type UserRepository struct{ db *sql.DB }
 func NewUserRepository(db *sql.DB) *UserRepository { return &UserRepository{db: db} }
 
 func (r *UserRepository) CreateUser(user *models.User) error {
-	_, err := r.db.Exec(`INSERT INTO users(id,username,email,password_hash,role,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7)`, user.ID, user.Username, user.Email, user.PasswordHash, user.Role, user.CreatedAt, user.UpdatedAt)
+	_, err := r.db.Exec(`INSERT INTO users(id,username,email,password_hash,role,is_anonymous,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, user.ID, user.Username, user.Email, user.PasswordHash, user.Role, user.IsAnonymous, user.CreatedAt, user.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("creating user: %w", err)
 	}
 	return nil
 }
 func (r *UserRepository) GetUserByID(id string) (*models.User, error) {
-	return r.scanUser(r.db.QueryRow(`SELECT id,username,email,password_hash,role,created_at,updated_at,auth_version FROM users WHERE id=$1`, id))
+	return r.scanUser(r.db.QueryRow(`SELECT id,username,email,password_hash,role,is_anonymous,created_at,updated_at,auth_version FROM users WHERE id=$1`, id))
 }
 func (r *UserRepository) GetUserByEmail(email string) (*models.User, error) {
-	return r.scanUser(r.db.QueryRow(`SELECT id,username,email,password_hash,role,created_at,updated_at,auth_version FROM users WHERE email=$1`, email))
+	return r.scanUser(r.db.QueryRow(`SELECT id,username,email,password_hash,role,is_anonymous,created_at,updated_at,auth_version FROM users WHERE email=$1`, email))
 }
 func (r *UserRepository) GetUserByUsername(username string) (*models.User, error) {
-	return r.scanUser(r.db.QueryRow(`SELECT id,username,email,password_hash,role,created_at,updated_at,auth_version FROM users WHERE username=$1`, username))
+	return r.scanUser(r.db.QueryRow(`SELECT id,username,email,password_hash,role,is_anonymous,created_at,updated_at,auth_version FROM users WHERE username=$1`, username))
 }
 
 func (r *UserRepository) UpdateUser(user *models.User, passwordChanged bool) error {
@@ -100,18 +100,23 @@ func (r *UserRepository) GetUserRole(id string) (string, error) {
 	return role, nil
 }
 func (r *UserRepository) GetAuthVersion(id string) (int64, error) {
+	version, _, err := r.GetAuthInfo(id)
+	return version, err
+}
+func (r *UserRepository) GetAuthInfo(id string) (int64, bool, error) {
 	var version int64
-	err := r.db.QueryRow(`SELECT auth_version FROM users WHERE id=$1`, id).Scan(&version)
+	var isAnonymous bool
+	err := r.db.QueryRow(`SELECT auth_version, is_anonymous FROM users WHERE id=$1`, id).Scan(&version, &isAnonymous)
 	if errors.Is(err, sql.ErrNoRows) {
-		return 0, errors.New("user not found")
+		return 0, false, errors.New("user not found")
 	}
 	if err != nil {
-		return 0, fmt.Errorf("reading user session version: %w", err)
+		return 0, false, fmt.Errorf("reading user session info: %w", err)
 	}
-	return version, nil
+	return version, isAnonymous, nil
 }
 func (r *UserRepository) ListUsers() ([]*models.User, error) {
-	rows, err := r.db.Query(`SELECT id,username,email,role,created_at,updated_at FROM users ORDER BY created_at DESC`)
+	rows, err := r.db.Query(`SELECT id,username,email,role,is_anonymous,created_at,updated_at FROM users ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("listing users: %w", err)
 	}
@@ -119,7 +124,7 @@ func (r *UserRepository) ListUsers() ([]*models.User, error) {
 	users := make([]*models.User, 0)
 	for rows.Next() {
 		u := &models.User{}
-		if err := rows.Scan(&u.ID, &u.Username, &u.Email, &u.Role, &u.CreatedAt, &u.UpdatedAt); err != nil {
+		if err := rows.Scan(&u.ID, &u.Username, &u.Email, &u.Role, &u.IsAnonymous, &u.CreatedAt, &u.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scanning user row: %w", err)
 		}
 		users = append(users, u)
@@ -131,7 +136,7 @@ func (r *UserRepository) ListUsers() ([]*models.User, error) {
 }
 func (r *UserRepository) scanUser(row *sql.Row) (*models.User, error) {
 	var u models.User
-	err := row.Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &u.Role, &u.CreatedAt, &u.UpdatedAt, &u.AuthVersion)
+	err := row.Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &u.Role, &u.IsAnonymous, &u.CreatedAt, &u.UpdatedAt, &u.AuthVersion)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, errors.New("user not found")
 	}

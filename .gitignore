@@ -60,8 +60,10 @@ env/
 
 # Frontend dependencies and builds
 node_modules/
+*.tsbuildinfo
 
-# Temporary files
+# Temporary and test artifacts
 *.tmp
 *.bak
 .DS_Store
+cloudvault-test.pdf

@@ -25,7 +25,7 @@ func (r *FileDeleteRepository) Request(ctx context.Context, file *models.File, a
 		return err
 	}
 	defer tx.Rollback()
-	res, err := tx.ExecContext(ctx, `UPDATE files SET state='deleting',updated_at=NOW() WHERE id=$1 AND owner_id=$2 AND state='active'`, file.ID, file.OwnerID)
+	res, err := tx.ExecContext(ctx, `UPDATE files SET state='deleting',folder_id=NULL,updated_at=NOW() WHERE id=$1 AND owner_id=$2 AND state='active'`, file.ID, file.OwnerID)
 	if err != nil {
 		return fmt.Errorf("marking file for deletion: %w", err)
 	}
@@ -40,7 +40,7 @@ func (r *FileDeleteRepository) Request(ctx context.Context, file *models.File, a
 	if _, err := tx.ExecContext(ctx, `INSERT INTO file_delete_jobs(id,file_id,owner_id,object_key,size_bytes,actor_subject,file_name) VALUES($1,$2,$3,$4,$5,$6,$7)`, jobID, file.ID, file.OwnerID, file.Path, file.Size, actorID, file.Name); err != nil {
 		return fmt.Errorf("queuing file deletion: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO audit_events(actor_id,actor_subject,owner_id,resource_type,resource_id,action,outcome,details) VALUES($1,$1,$2,'file',$3,'delete_requested','success',jsonb_build_object('size_bytes',$4))`, actorID, file.OwnerID, file.ID, file.Size); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO audit_events(actor_id,actor_subject,owner_id,resource_type,resource_id,action,outcome,details) VALUES((SELECT id FROM users WHERE id=$1),$1,$2,'file',$3,'delete_requested','success',jsonb_build_object('size_bytes',$4::bigint))`, actorID, file.OwnerID, file.ID, file.Size); err != nil {
 		return fmt.Errorf("recording delete request: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -92,7 +92,7 @@ func (r *FileDeleteRepository) Complete(ctx context.Context, job *FileDeleteJob)
 	if _, err := tx.ExecContext(ctx, `INSERT INTO file_activity(owner_id,actor_id,file_id,file_name,action,size_bytes) VALUES($1,(SELECT id FROM users WHERE id=$2),NULL,$3,'delete',$4)`, job.OwnerID, job.ActorSubject, job.FileName, job.SizeBytes); err != nil {
 		return fmt.Errorf("recording delete activity: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO audit_events(actor_id,actor_subject,owner_id,resource_type,resource_id,action,outcome,details) VALUES((SELECT id FROM users WHERE id=$1),$1,$2,'file',$3,'delete','success',jsonb_build_object('size_bytes',$4))`, job.ActorSubject, job.OwnerID, job.FileID, job.SizeBytes); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO audit_events(actor_id,actor_subject,owner_id,resource_type,resource_id,action,outcome,details) VALUES((SELECT id FROM users WHERE id=$1),$1,$2,'file',$3,'delete','success',jsonb_build_object('size_bytes',$4::bigint))`, job.ActorSubject, job.OwnerID, job.FileID, job.SizeBytes); err != nil {
 		return fmt.Errorf("recording deletion audit: %w", err)
 	}
 	if err := tx.Commit(); err != nil {

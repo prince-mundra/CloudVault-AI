@@ -24,6 +24,9 @@ type UserRoleChecker interface {
 type UserSessionVersionChecker interface {
 	GetAuthVersion(userID string) (int64, error)
 }
+type UserAuthInfoChecker interface {
+	GetAuthInfo(userID string) (int64, bool, error)
+}
 
 // CORSMiddleware only reflects an explicitly configured origin.
 func CORSMiddleware(allowedOrigins ...[]string) gin.HandlerFunc {
@@ -100,24 +103,37 @@ func JWTAuthMiddleware(jwtSecret string, revocations TokenRevocationChecker, ver
 				return
 			}
 		}
-		if claims.SessionVersion == 0 && !strings.HasPrefix(claims.Subject, "anon_") {
+		if claims.SessionVersion <= 0 {
 			ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "session expired"})
 			return
 		}
-		if claims.SessionVersion > 0 && len(versions) > 0 && versions[0] != nil {
-			current, err := versions[0].GetAuthVersion(claims.Subject)
-			if err != nil {
-				if err.Error() == "user not found" {
-					ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "account no longer exists"})
-					return
-				}
-				ctx.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "authentication service unavailable"})
+		if len(versions) == 0 || versions[0] == nil {
+			ctx.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "authentication service unavailable"})
+			return
+		}
+
+		infoChecker, ok := versions[0].(UserAuthInfoChecker)
+		if !ok {
+			ctx.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "authentication service unavailable"})
+			return
+		}
+
+		currentVersion, dbIsAnonymous, err := infoChecker.GetAuthInfo(claims.Subject)
+		if err != nil {
+			if err.Error() == "user not found" {
+				ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "account no longer exists"})
 				return
 			}
-			if current != claims.SessionVersion {
-				ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "session expired"})
-				return
-			}
+			ctx.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "authentication service unavailable"})
+			return
+		}
+		if currentVersion != claims.SessionVersion {
+			ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "session expired"})
+			return
+		}
+		if claims.IsAnonymous != dbIsAnonymous {
+			ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "token identity mismatch"})
+			return
 		}
 		ctx.Set(ClaimsKey, claims)
 		ctx.Set(SubjectKey, claims.Subject)

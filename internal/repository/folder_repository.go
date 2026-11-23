@@ -86,7 +86,7 @@ func (r *FolderRepository) IsEmpty(id string) (bool, error) {
 	var count int
 	err := r.db.QueryRow(`SELECT
 		(SELECT COUNT(*) FROM folders WHERE parent_id=$1) +
-		(SELECT COUNT(*) FROM files WHERE folder_id=$1)`, id).Scan(&count)
+		(SELECT COUNT(*) FROM files WHERE folder_id=$1 AND state='active')`, id).Scan(&count)
 	if err != nil {
 		return false, fmt.Errorf("checking folder contents: %w", err)
 	}

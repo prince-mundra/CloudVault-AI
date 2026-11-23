@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg-canvas: #101114;
+    --bg-surface: #15171D;
+    --bg-card: #191B22;
+    --bg-card-hover: #1F222B;
+    --border-hairline: #242731;
+    --border-hover: #323644;
+    --accent-primary: #7667F5;
+    --accent-primary-hover: #8679F7;
+    --accent-secondary: #36C8D8;
+    --text-primary: #F3F4F6;
+    --text-muted: #9296A3;
+    --status-success: #22C55E;
+    --status-warning: #F59E0B;
+    --status-danger: #EF4444;
+  }
+
+  * {
+    border-color: #242731;
+  }
+
+  body {
+    background-color: #101114;
+    color: #F3F4F6;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* Custom dark scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #101114;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #242731;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #323644;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
