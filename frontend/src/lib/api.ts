@@ -25,6 +25,7 @@ export interface FileItem {
   folder_id?: string | null;
   created_at: string;
   updated_at: string;
+  state?: string;
 }
 
 export interface FolderItem {
@@ -61,6 +62,22 @@ export interface StorageAnalytics {
   file_types: FileTypeUsage[];
   recent_uploads: FileItem[];
   recent_activity: FileActivity[];
+}
+
+export interface IngestionStatus {
+  state: 'queued' | 'processing' | 'succeeded' | 'failed' | 'cancelled';
+  attempts: number;
+  last_error?: string;
+  updated_at: string;
+}
+
+export interface SummaryStatus {
+  state: 'queued' | 'processing' | 'succeeded' | 'failed' | 'cancelled';
+  attempts: number;
+  last_error?: string;
+  updated_at: string;
+  summary?: string;
+  model?: string;
 }
 
 export interface ApiResponse<T = any> {
@@ -283,6 +300,14 @@ export const api = {
 
   getFile: async (id: string) => {
     return request<{ data: FileItem }>(`/api/v1/files/${id}`);
+  },
+
+  getIngestionStatus: async (fileId: string): Promise<IngestionStatus> => {
+    return request<IngestionStatus>(`/api/v1/files/${fileId}/ingestion`);
+  },
+
+  getSummaryStatus: async (fileId: string): Promise<SummaryStatus> => {
+    return request<SummaryStatus>(`/api/v1/files/${fileId}/summary`);
   },
 
   deleteFile: async (id: string) => {
