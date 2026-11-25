@@ -103,7 +103,7 @@ func (r *UploadRepository) Finalize(ctx context.Context, reservationID string, f
 	if _, err := tx.ExecContext(ctx, `INSERT INTO file_activity (owner_id,file_id,file_name,action,size_bytes,actor_id) VALUES ($1,$2,$3,'upload',$4,$5)`, f.OwnerID, f.ID, f.Name, f.Size, actor); err != nil {
 		return fmt.Errorf("recording upload activity: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO audit_events (actor_id,actor_subject,owner_id,resource_type,resource_id,action,outcome,details) VALUES ($1,$1,$2,'file',$3,'upload','success',jsonb_build_object('size_bytes',$4::bigint,'sha256',$5::text,'content_type',$6::text))`, actor, f.OwnerID, f.ID, f.Size, f.SHA256, f.ContentType); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO audit_events (actor_id,actor_subject,owner_id,resource_type,resource_id,action,outcome,details) VALUES ($1::text,$1::text,$2,'file',$3,'upload','success',jsonb_build_object('size_bytes',$4::bigint,'sha256',$5::text,'content_type',$6::text))`, actor, f.OwnerID, f.ID, f.Size, f.SHA256, f.ContentType); err != nil {
 		return fmt.Errorf("recording upload audit: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO document_ingestion_jobs (file_id,state) VALUES ($1,'queued')`, f.ID); err != nil {

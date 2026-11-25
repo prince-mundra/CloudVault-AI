@@ -28,6 +28,7 @@ export const AppRoutes: React.FC = () => {
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/files" element={<FilesPage />} />
           <Route path="/files/:folderId" element={<FilesPage />} />
+          <Route path="/intelligence" element={<IntelligencePage />} />
           <Route path="/intelligence/:fileId" element={<IntelligencePage />} />
           <Route path="/assistant" element={<AssistantPage />} />
           <Route path="/search" element={<SearchPage />} />
