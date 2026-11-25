@@ -29,6 +29,7 @@ class Settings:
     chunk_overlap: int
     max_ocr_pages: int = 40
     summary_model: str = "llama3.2:3b"
+    rag_similarity_threshold: float = 0.40
 
     @property
     def database_url(self) -> str:
@@ -63,6 +64,7 @@ def from_env() -> Settings:
         chunk_overlap=int(os.getenv("AI_CHUNK_OVERLAP", "150")),
         max_ocr_pages=int(os.getenv("AI_MAX_OCR_PAGES", "40")),
         summary_model=os.getenv("OLLAMA_SUMMARY_MODEL", "llama3.2:3b"),
+        rag_similarity_threshold=float(os.getenv("AI_RAG_SIMILARITY_THRESHOLD", "0.40")),
     )
 
 

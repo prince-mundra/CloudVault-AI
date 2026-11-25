@@ -18,9 +18,18 @@ func TestInitRoutesRegistersWithoutConflicts(t *testing.T) {
 	for _, route := range router.Routes() {
 		registered[route.Method+" "+route.Path] = true
 	}
-	for _, route := range []string{"POST /v1/search/semantic", "GET /v1/files/:id/ingestion", "GET /v1/files/:id/summary"} {
+	for _, route := range []string{
+		"POST /v1/search/semantic",
+		"GET /v1/files/:id/ingestion",
+		"GET /v1/files/:id/summary",
+		"POST /v1/chat",
+		"GET /v1/conversations",
+		"POST /v1/conversations",
+		"GET /v1/conversations/:id",
+		"DELETE /v1/conversations/:id",
+	} {
 		if !registered[route] {
-			t.Fatalf("expected Phase 2 route %q", route)
+			t.Fatalf("expected Phase 2 / Milestone 4 route %q", route)
 		}
 	}
 }

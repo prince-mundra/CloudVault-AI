@@ -16,9 +16,14 @@ import (
 	"github.com/souvik03-136/Go-Store/internal/storage"
 )
 
+type AICoreClient interface {
+	controllers.SemanticSearcher
+	services.AIChatter
+}
+
 // initRoutes wires the existing API plus Phase 1 controls. The returned worker
 // is owned by Server.Start and exits when its context is cancelled.
-func initRoutes(router *gin.Engine, db *sql.DB, store storage.Storage, jwtSecret string, quotaBytes, maxUploadBytes int64, allowedOrigins []string, aiSearcher controllers.SemanticSearcher) func(context.Context) {
+func initRoutes(router *gin.Engine, db *sql.DB, store storage.Storage, jwtSecret string, quotaBytes, maxUploadBytes int64, allowedOrigins []string, aiClient AICoreClient) func(context.Context) {
 	userRepo := repository.NewUserRepository(db)
 	fileRepo := repository.NewFileRepository(db)
 	folderRepo := repository.NewFolderRepository(db)
@@ -31,6 +36,7 @@ func initRoutes(router *gin.Engine, db *sql.DB, store storage.Storage, jwtSecret
 	shareLinkRepo := repository.NewShareLinkRepository(db)
 	ingestionRepo := repository.NewIngestionRepository(db)
 	summaryRepo := repository.NewSummaryRepository(db)
+	chatRepo := repository.NewChatRepository(db)
 	authSvc := services.NewAuthService(userRepo, revocationRepo, jwtSecret)
 	userSvc := services.NewUserService(userRepo)
 	folderSvc := services.NewFolderService(folderRepo)
@@ -38,6 +44,7 @@ func initRoutes(router *gin.Engine, db *sql.DB, store storage.Storage, jwtSecret
 	sharingSvc := services.NewSharingService(fileRepo, userRepo, permissionRepo, auditRepo)
 	analyticsSvc := services.NewAnalyticsService(activityRepo, quotaBytes)
 	shareLinkSvc := services.NewShareLinkService(fileRepo, shareLinkRepo, store, auditRepo, activityRepo)
+	chatSvc := services.NewChatService(chatRepo, aiClient)
 	authCtrl := controllers.NewAuthController(authSvc)
 	userCtrl := controllers.NewUserController(userSvc)
 	folderCtrl := controllers.NewFolderController(folderSvc)
@@ -45,9 +52,10 @@ func initRoutes(router *gin.Engine, db *sql.DB, store storage.Storage, jwtSecret
 	sharingCtrl := controllers.NewSharingController(sharingSvc)
 	analyticsCtrl := controllers.NewAnalyticsController(analyticsSvc)
 	shareLinkCtrl := controllers.NewShareLinkController(shareLinkSvc)
-	semanticSearchCtrl := controllers.NewSemanticSearchController(aiSearcher)
+	semanticSearchCtrl := controllers.NewSemanticSearchController(aiClient)
 	ingestionCtrl := controllers.NewIngestionController(ingestionRepo)
 	summaryCtrl := controllers.NewSummaryController(summaryRepo)
+	chatCtrl := controllers.NewChatController(chatSvc)
 
 	router.Use(auth.CORSMiddleware(allowedOrigins))
 	router.Use(auth.RequestLogger())
@@ -79,6 +87,13 @@ func initRoutes(router *gin.Engine, db *sql.DB, store storage.Storage, jwtSecret
 	protected.GET("/analytics/storage", analyticsCtrl.GetStorage)
 	semanticSearchLimit := auth.NewIPRateLimiter(20, time.Minute)
 	protected.POST("/search/semantic", semanticSearchLimit.Middleware(), semanticSearchCtrl.Search)
+	chatLimit := auth.NewIPRateLimiter(30, time.Minute)
+	protected.POST("/chat", chatLimit.Middleware(), chatCtrl.SendMessage)
+	conversations := protected.Group("/conversations")
+	conversations.GET("", chatCtrl.ListConversations)
+	conversations.POST("", chatCtrl.CreateConversation)
+	conversations.GET("/:id", chatCtrl.GetConversation)
+	conversations.DELETE("/:id", chatCtrl.DeleteConversation)
 	admin := protected.Group("/admin")
 	admin.Use(auth.AdminRoleMiddleware(userRepo))
 	admin.GET("/users", userCtrl.ListUsers)
